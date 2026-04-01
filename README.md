@@ -58,7 +58,7 @@ Instructions will be added as the project progresses
 ---
 ## Team Members
 - Isaac
-- Selvi-
+- Selvi
 - Alhajie
-- Macha 
+- Masha 
 
