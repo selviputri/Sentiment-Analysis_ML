@@ -1,0 +1,13 @@
+data:
+  annotations: data/processed/annotations.csv
+  mean: [0.485, 0.456, 0.406]
+  std: [0.229, 0.224, 0.225]
+model:
+  num_classes: 3
+  pretrained: true
+training:
+  seed: 42
+  batch_size: 32
+  val_split: 0.2
+  epochs: 20
+  lr: 0.0003
