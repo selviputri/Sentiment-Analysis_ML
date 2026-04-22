@@ -1,0 +1,10 @@
+split,split_size,class,count,percentage
+Train,3401,negative,760,22.35
+Train,3401,neutral,2269,66.72
+Train,3401,positive,372,10.94
+Validation,972,negative,216,22.22
+Validation,972,neutral,649,66.77
+Validation,972,positive,107,11.01
+Test,486,negative,109,22.43
+Test,486,neutral,324,66.67
+Test,486,positive,53,10.91
