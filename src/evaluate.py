@@ -8,25 +8,22 @@ import torch
 from sklearn.metrics import classification_report, confusion_matrix
 from torch.utils.data import DataLoader
 
-from dataset import (
-    LABEL_MAP,
-    SentimentImageDataset,
-    load_config,
-    validate_config,
-    load_annotations,
-    split_data,
-    get_transforms,
-)
-from model import build_resnet18, get_device
-
-
-INDEX_TO_SENTIMENT = {v: k for k, v in LABEL_MAP.items()}
+try:
+    from .dataset import ImageSentimentDataset, INDEX_TO_SENTIMENT
+    from .model import build_resnet18, get_device
+    from .utils import load_config
+except ImportError:
+    from dataset import ImageSentimentDataset, INDEX_TO_SENTIMENT
+    from model import build_resnet18, get_device
+    from utils import load_config
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Evaluate sentiment classifier")
     parser.add_argument("--config", type=str, default="configs/base.yaml")
     parser.add_argument("--checkpoint", type=Path, required=True)
+    parser.add_argument("--data_root", type=Path, default=Path("data/raw"))
+    parser.add_argument("--annotations", type=Path, help="Path to annotations CSV for evaluation")
     return parser.parse_args()
 
 
@@ -36,41 +33,36 @@ def main() -> None:
     config = load_config(args.config)
     validate_config(config)
 
-    # Load full dataset and recreate same split logic used in training
-    df = load_annotations(config)
-    _, _, test_df = split_data(
-        df=df,
-        val_split=config["training"]["val_split"],
-        test_split=config["training"]["test_split"],
-        seed=config["training"]["seed"],
-    )
-
-    # Use evaluation transform only
-    _, eval_transform = get_transforms(config)
-
-    test_dataset = SentimentImageDataset(test_df, transform=eval_transform)
-    test_loader = DataLoader(
-        test_dataset,
-        batch_size=config["training"]["batch_size"],
-        shuffle=False,
-        num_workers=config.get("dataloader", {}).get("num_workers", 0),
-        pin_memory=config.get("dataloader", {}).get("pin_memory", False),
+    annotations_path = args.annotations or Path(cfg.data.test_annotations)
+    print(f"Evaluating on annotations: {annotations_path}")
+    dataset = ImageSentimentDataset(
+        annotations_file=annotations_path,
+        root_dir=args.data_root,
+        transform=transform,
     )
 
     device = get_device()
-    model = build_resnet18(
-        num_classes=config["model"]["num_classes"],
-        pretrained=False,
-    )
-
-    checkpoint = torch.load(args.checkpoint, map_location=device)
-
-    # Support both full checkpoint dict and plain state_dict
-    if isinstance(checkpoint, dict) and "model_state_dict" in checkpoint:
+    model = build_resnet18(num_classes=cfg.model.num_classes, pretrained=False)
+    
+    # Load checkpoint with error handling
+    try:
+        checkpoint = torch.load(args.checkpoint, map_location=device)
+    except FileNotFoundError:
+        print(f"Error: Checkpoint file not found at {args.checkpoint}")
+        return
+    except Exception as e:
+        print(f"Error loading checkpoint: {e}")
+        return
+    
+    try:
         model.load_state_dict(checkpoint["model_state_dict"])
-    else:
-        model.load_state_dict(checkpoint)
-
+    except KeyError:
+        print("Error: 'model_state_dict' key not found in checkpoint")
+        return
+    except Exception as e:
+        print(f"Error loading model state: {e}")
+        return
+    
     model.to(device)
     model.eval()
 

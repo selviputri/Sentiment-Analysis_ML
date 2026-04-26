@@ -51,7 +51,8 @@ def main() -> None:
     model = build_resnet18(num_classes=cfg.model.num_classes, pretrained=cfg.model.pretrained)
     model.to(device)
 
-    criterion = nn.CrossEntropyLoss()
+    class_weights = torch.tensor([2.0, 1.0, 0.5]).to(device)
+    criterion = nn.CrossEntropyLoss(weight=class_weights)
     optimizer = optim.Adam(model.parameters(), lr=cfg.training.lr)
 
     best_val_loss = float("inf")
