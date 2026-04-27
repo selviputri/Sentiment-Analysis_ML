@@ -18,11 +18,10 @@ LABEL_MAP = {
     "positive": 2,
 }
 
+INDEX_TO_SENTIMENT = {v: k for k, v in LABEL_MAP.items()}
+
 
 def load_config(config_path: str = "configs/base.yaml") -> Dict:
-    """
-    Load YAML configuration file.
-    """
     project_root = Path(__file__).resolve().parents[1]
     full_config_path = project_root / config_path
 
@@ -39,9 +38,6 @@ def load_config(config_path: str = "configs/base.yaml") -> Dict:
 
 
 def validate_config(config: Dict) -> None:
-    """
-    Validate presence of required config keys.
-    """
     required_paths = [
         ("data", "annotations"),
         ("data", "raw_root"),
@@ -69,9 +65,6 @@ def validate_config(config: Dict) -> None:
 
 
 def load_annotations(config: Dict) -> pd.DataFrame:
-    """
-    Load and validate annotation CSV, map labels, and build full image paths.
-    """
     project_root = Path(__file__).resolve().parents[1]
     annotations_path = project_root / config["data"]["annotations"]
 
@@ -118,9 +111,6 @@ def split_data(
     test_split: float,
     seed: int,
 ) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
-    """
-    Split dataset into train, validation, and test with stratification.
-    """
     train_df, temp_df = train_test_split(
         df,
         test_size=val_split + test_split,
@@ -150,9 +140,6 @@ def save_split_csvs(
     test_df: pd.DataFrame,
     config: Dict,
 ) -> None:
-    """
-    Save split CSVs for reproducibility.
-    """
     project_root = Path(__file__).resolve().parents[1]
     processed_root = project_root / config["data"]["processed_root"]
     processed_root.mkdir(parents=True, exist_ok=True)
@@ -167,9 +154,6 @@ def print_split_summary(
     val_df: pd.DataFrame,
     test_df: pd.DataFrame,
 ) -> None:
-    """
-    Print sizes and label distribution for each split.
-    """
     def summarize_split(name: str, split_df: pd.DataFrame) -> None:
         print(f"\n{name} split size: {len(split_df)}")
         counts = split_df["sentiment"].value_counts().sort_index()
@@ -191,10 +175,6 @@ def create_split_summary_table(
     test_df: pd.DataFrame,
     config: Dict,
 ) -> None:
-    """
-    Create and save a summary table for train/validation/test splits,
-    including total split size, class counts, and percentages.
-    """
     project_root = Path(__file__).resolve().parents[1]
     processed_root = project_root / config["data"]["processed_root"]
     processed_root.mkdir(parents=True, exist_ok=True)
@@ -237,10 +217,6 @@ def plot_split_distributions(
     test_df: pd.DataFrame,
     config: Dict,
 ) -> None:
-    """
-    Plot and save class distribution across train, validation, and test splits,
-    showing both counts and percentages on the bars.
-    """
     project_root = Path(__file__).resolve().parents[1]
     figures_dir = project_root / "results" / "figures"
     figures_dir.mkdir(parents=True, exist_ok=True)
@@ -299,15 +275,15 @@ def plot_split_distributions(
 
     output_path = figures_dir / "split_distribution.png"
     plt.savefig(output_path, dpi=300)
-    plt.show()
+
+    plt.show(block=False)
+    plt.pause(3)
+    plt.close()
 
     print(f"\nSaved split distribution plot to: {output_path}")
 
 
 def get_transforms(config: Dict):
-    """
-    Create training and evaluation transforms from config.
-    """
     mean = config["data"]["mean"]
     std = config["data"]["std"]
 
@@ -333,11 +309,52 @@ def get_transforms(config: Dict):
 class SentimentImageDataset(Dataset):
     """
     PyTorch Dataset for image-based sentiment classification.
+
+    Supports two usages:
+    1. SentimentImageDataset(dataframe, transform=...)
+    2. SentimentImageDataset(annotations_file=..., root_dir=..., transform=...)
     """
 
-    def __init__(self, dataframe: pd.DataFrame, transform=None):
-        self.dataframe = dataframe
+    def __init__(self, dataframe=None, transform=None, annotations_file=None, root_dir=None, **kwargs):
         self.transform = transform
+
+        if dataframe is not None:
+            self.dataframe = dataframe.copy()
+
+        elif annotations_file is not None and root_dir is not None:
+            annotations_file = Path(annotations_file)
+            root_dir = Path(root_dir)
+
+            df = pd.read_csv(annotations_file)
+
+            required_columns = {"image_path", "sentiment"}
+            missing_columns = required_columns - set(df.columns)
+            if missing_columns:
+                raise ValueError(f"Missing required columns in annotations CSV: {missing_columns}")
+
+            df = df[["image_path", "sentiment"]].copy()
+            df["image_path"] = df["image_path"].astype(str).str.strip()
+            df["sentiment"] = df["sentiment"].astype(str).str.strip().str.lower()
+            df["label"] = df["sentiment"].map(LABEL_MAP)
+
+            invalid_labels = df[df["label"].isna()]["sentiment"].unique().tolist()
+            if invalid_labels:
+                raise ValueError(f"Invalid sentiment labels found: {invalid_labels}")
+
+            df["full_image_path"] = df["image_path"].apply(lambda x: root_dir / x)
+
+            df = df[df["full_image_path"].apply(lambda x: x.exists())].copy()
+            df.reset_index(drop=True, inplace=True)
+
+            if df.empty:
+                raise ValueError("No valid image files found for this dataset.")
+
+            self.dataframe = df
+
+        else:
+            raise ValueError(
+                "You must provide either dataframe=... or both annotations_file=... and root_dir=..."
+            )
 
     def __len__(self) -> int:
         return len(self.dataframe)
@@ -358,13 +375,11 @@ class SentimentImageDataset(Dataset):
         return image, label
 
 
-def get_dataloaders(config_path: str = "configs/base.yaml"):
-    """
-    Main entry point for the rest of the team.
+# Compatibility alias for older code in train.py/evaluate.py
+ImageSentimentDataset = SentimentImageDataset
 
-    Returns:
-        train_loader, val_loader, test_loader
-    """
+
+def get_dataloaders(config_path: str = "configs/base.yaml"):
     config = load_config(config_path)
     validate_config(config)
 
@@ -422,9 +437,6 @@ def get_dataloaders(config_path: str = "configs/base.yaml"):
 
 
 def main():
-    """
-    Quick smoke test for dataset pipeline.
-    """
     train_loader, val_loader, test_loader = get_dataloaders()
 
     print("\n===== DATALOADER CHECK =====")
@@ -440,4 +452,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-    
