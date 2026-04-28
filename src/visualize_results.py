@@ -14,11 +14,11 @@ from torch.utils.data import DataLoader
 from torchvision import transforms
 
 try:
-    from .dataset import ImageSentimentDataset, INDEX_TO_SENTIMENT, SENTIMENT_TO_INDEX
+    from .dataset import ImageSentimentDataset, INDEX_TO_SENTIMENT
     from .model import build_resnet18, get_device
     from .utils import load_config
 except ImportError:
-    from dataset import ImageSentimentDataset, INDEX_TO_SENTIMENT, SENTIMENT_TO_INDEX
+    from dataset import ImageSentimentDataset, INDEX_TO_SENTIMENT
     from model import build_resnet18, get_device
     from utils import load_config
 
@@ -169,7 +169,7 @@ def main():
     plot_confusion_matrix(conf_matrix, target_names, args.output_dir / "confusion_matrix.png")
     
     # 2. Class Distribution
-    plot_class_distribution(dataset.annotations, args.output_dir / "class_distribution.png")
+    plot_class_distribution(dataset.dataframe, args.output_dir / "class_distribution.png")
     
     # 3. Metrics by Class
     plot_metrics_by_class(report, args.output_dir / "metrics_by_class.png")

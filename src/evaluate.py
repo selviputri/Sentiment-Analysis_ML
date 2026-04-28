@@ -7,6 +7,7 @@ from pathlib import Path
 import torch
 from sklearn.metrics import classification_report, confusion_matrix
 from torch.utils.data import DataLoader
+from torchvision import transforms
 
 try:
     from .dataset import ImageSentimentDataset, INDEX_TO_SENTIMENT
@@ -30,21 +31,32 @@ def parse_args() -> argparse.Namespace:
 def main() -> None:
     args = parse_args()
 
-    config = load_config(args.config)
-    validate_config(config)
+    cfg = load_config(args.config)
+
+    transform = transforms.Compose([
+        transforms.Resize((224, 224)),
+        transforms.ToTensor(),
+        transforms.Normalize(mean=cfg.data.mean, std=cfg.data.std),
+    ])
 
     annotations_path = args.annotations or Path(cfg.data.test_annotations)
     print(f"Evaluating on annotations: {annotations_path}")
+
     dataset = ImageSentimentDataset(
         annotations_file=annotations_path,
         root_dir=args.data_root,
         transform=transform,
     )
 
+    test_loader = DataLoader(
+        dataset,
+        batch_size=cfg.training.batch_size,
+        shuffle=False,
+    )
+
     device = get_device()
     model = build_resnet18(num_classes=cfg.model.num_classes, pretrained=False)
-    
-    # Load checkpoint with error handling
+
     try:
         checkpoint = torch.load(args.checkpoint, map_location=device)
     except FileNotFoundError:
@@ -53,7 +65,7 @@ def main() -> None:
     except Exception as e:
         print(f"Error loading checkpoint: {e}")
         return
-    
+
     try:
         model.load_state_dict(checkpoint["model_state_dict"])
     except KeyError:
@@ -62,7 +74,7 @@ def main() -> None:
     except Exception as e:
         print(f"Error loading model state: {e}")
         return
-    
+
     model.to(device)
     model.eval()
 
